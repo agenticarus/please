@@ -7,10 +7,12 @@ import (
 	"bufio"
 	"compress/gzip"
 	"encoding/base64"
+	"io"
 	"os"
 	"path"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -25,7 +27,7 @@ type dirCache struct {
 	Dir      string
 	Compress bool
 	Suffix   string
-	mtime    time.Date
+	mtime    time.Time
 	added    map[string]uint64
 	mutex    sync.Mutex
 }
@@ -45,7 +47,7 @@ func (cache *dirCache) storeFiles(target *core.BuildTarget, key []byte, suffix s
 	cache.markDir(cacheDir, 0)
 	var totalSize uint64
 	if cache.Compress {
-		totalSize = cache.storeCompressed(target, out, tmpDir, files)
+		totalSize = cache.storeCompressed(target, cacheDir, files)
 	} else {
 		for _, out := range files {
 			totalSize += cache.storeFile(target, out, tmpDir)
@@ -76,7 +78,7 @@ func (cache *dirCache) storeCompressed(target *core.BuildTarget, filename string
 
 // storeCompressed2 stores all the given files in the cache as a single compressed tarball.
 func (cache *dirCache) storeCompressed2(target *core.BuildTarget, filename string, files []string) error {
-	if err := cache.ensureReady(filename); err != nil {
+	if err := cache.ensureStoreReady(filename); err != nil {
 		return err
 	}
 	f, err := os.Create(filename)
@@ -93,11 +95,11 @@ func (cache *dirCache) storeCompressed2(target *core.BuildTarget, filename strin
 	outDir := target.OutDir()
 	for _, file := range files {
 		// Any one of these might be a directory, so we have to walk them.
-		if err := fs.Walk(path.Join(outDir, file), func(name string, isDir bool) {
-			if hdr, err := cache.tarHeader(name); err != nil {
+		if err := fs.Walk(path.Join(outDir, file), func(name string, isDir bool) error {
+			hdr, err := cache.tarHeader(name)
+			if err != nil {
 				return err
-			}
-			if err := tw.WriteHeader(hdr); err != nil {
+			} else if err := tw.WriteHeader(hdr); err != nil {
 				return err
 			}
 			f, err := os.Open(name)
@@ -118,7 +120,7 @@ func (cache *dirCache) storeCompressed2(target *core.BuildTarget, filename strin
 func (cache *dirCache) tarHeader(file string) (*tar.Header, error) {
 	info, err := os.Lstat(file)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	link := ""
 	if info.Mode()&os.ModeSymlink != 0 {
@@ -144,8 +146,8 @@ func (cache *dirCache) tarHeader(file string) (*tar.Header, error) {
 	return hdr, err
 }
 
-// ensureReady ensures that the directory containing the given filename exists and any previous file has been removed.
-func (cache *dirCache) ensureReady(filename string) error {
+// ensureStoreReady ensures that the directory containing the given filename exists and any previous file has been removed.
+func (cache *dirCache) ensureStoreReady(filename string) error {
 	dir := path.Dir(filename)
 	if err := os.MkdirAll(dir, core.DirPermissions); err != nil {
 		return err
@@ -159,7 +161,7 @@ func (cache *dirCache) storeFile(target *core.BuildTarget, out, cacheDir string)
 	log.Debug("Storing %s: %s in dir cache...", target.Label, out)
 	outFile := path.Join(core.RepoRoot, target.OutDir(), out)
 	cachedFile := path.Join(cacheDir, out)
-	if err := cache.ensureReady(cachedFile, out); err != nil {
+	if err := cache.ensureStoreReady(cachedFile); err != nil {
 		log.Warning("Failed to setup cache directory: %s", err)
 		return 0
 	}
@@ -174,33 +176,33 @@ func (cache *dirCache) storeFile(target *core.BuildTarget, out, cacheDir string)
 }
 
 func (cache *dirCache) Retrieve(target *core.BuildTarget, key []byte) bool {
-	return cache.retrieveFiles(target, key, cacheArtifacts(target))
+	return cache.retrieveFiles(target, key, "", cacheArtifacts(target))
 }
 
 func (cache *dirCache) RetrieveExtra(target *core.BuildTarget, key []byte, out string) bool {
-	return cache.retrieveFiles(target, key, []string{out})
+	return cache.retrieveFiles(target, key, out, []string{out})
 }
 
 // retrieveFiles retrieves the given set of files from the cache.
-func (cache *dirCache) retrieveFiles(target *core.BuildTarget, key []byte, outs []string) bool {
-	found, err := cache.retrieveFiles2(target, cache.getPath(target, key, out), outs)
+func (cache *dirCache) retrieveFiles(target *core.BuildTarget, key []byte, suffix string, outs []string) bool {
+	found, err := cache.retrieveFiles2(target, cache.getPath(target, key, suffix), outs)
 	if err != nil {
 		log.Warning("Failed to retrieve %s from dir cache: %s", target.Label, err)
 		return false
 	} else if found {
-		log.Debug("Retrieved %s: %s from dir cache", target.Label, cachedOut)
+		log.Debug("Retrieved %s: %s from dir cache", target.Label, suffix)
 	}
 	return found
 }
 
 func (cache *dirCache) retrieveFiles2(target *core.BuildTarget, cacheDir string, outs []string) (bool, error) {
 	if !core.PathExists(cacheDir) {
-		log.Debug("%s: %s doesn't exist in dir cache", target.Label, cachedOut)
+		log.Debug("%s: %s doesn't exist in dir cache", target.Label, cacheDir)
 		return false, nil
 	}
 	cache.markDir(cacheDir, 0)
 	if cache.Compress {
-		return true, cache.retrieveCompressed(target, cacheDir, outs)
+		return true, cache.retrieveCompressed(target, cacheDir)
 	} else {
 		for _, out := range outs {
 			realOut, err := cache.ensureRetrieveReady(target, out)
@@ -245,13 +247,13 @@ func (cache *dirCache) retrieveCompressed(target *core.BuildTarget, filename str
 		if err != nil {
 			return err
 		}
-		if hdr.Mode & os.ModeDir {
+		if hdr.Mode&int64(os.ModeDir) != 0 {
 			// Just create the directory
 			if err := os.MkdirAll(out, core.DirPermissions); err != nil {
 				return err
 			}
 		} else {
-			f, err := os.OpenFile(out, os.O_WRONLY|os.O_CREATE, hdr.Mode)
+			f, err := os.OpenFile(out, os.O_WRONLY|os.O_CREATE, os.FileMode(hdr.Mode))
 			if err != nil {
 				return err
 			}
@@ -267,7 +269,7 @@ func (cache *dirCache) retrieveCompressed(target *core.BuildTarget, filename str
 // ensureRetrieveReady makes sure that appropriate directories are created and old outputs are removed.
 func (cache *dirCache) ensureRetrieveReady(target *core.BuildTarget, out string) (string, error) {
 	fullOut := path.Join(core.RepoRoot, target.OutDir(), out)
-	if strings.ContainsByte(out, '/') { // The root directory will be there, only need to worry about outs in subdirectories.
+	if strings.ContainsRune(out, '/') { // The root directory will be there, only need to worry about outs in subdirectories.
 		if err := os.MkdirAll(path.Dir(fullOut), core.DirPermissions); err != nil {
 			return "", err
 		}
