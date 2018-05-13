@@ -55,9 +55,6 @@ protocgoplugin = //third_party/go:protoc-gen-go
 defaultimage = thoughtmachine/please_test:v2
 allowlocalfallback = false
 
-[cache]
-dircompress = true
-
 [licences]
 accept = MIT
 accept = MIT License
