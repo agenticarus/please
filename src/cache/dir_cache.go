@@ -96,17 +96,18 @@ func (cache *dirCache) storeCompressed2(target *core.BuildTarget, filename strin
 	for _, file := range files {
 		// Any one of these might be a directory, so we have to walk them.
 		if err := fs.Walk(path.Join(outDir, file), func(name string, isDir bool) error {
-			hdr, err := cache.tarHeader(name)
+			hdr, err := cache.tarHeader(name, outDir)
 			if err != nil {
 				return err
 			} else if err := tw.WriteHeader(hdr); err != nil {
 				return err
-			}
-			f, err := os.Open(name)
-			if err != nil {
-				return err
-			} else if _, err := io.Copy(tw, f); err != nil {
-				return err
+			} else if !isDir {
+				f, err := os.Open(name)
+				if err != nil {
+					return err
+				} else if _, err := io.Copy(tw, f); err != nil {
+					return err
+				}
 			}
 			return nil
 		}); err != nil {
@@ -117,7 +118,7 @@ func (cache *dirCache) storeCompressed2(target *core.BuildTarget, filename strin
 }
 
 // tarHeader returns an appropriate tar header for the given file.
-func (cache *dirCache) tarHeader(file string) (*tar.Header, error) {
+func (cache *dirCache) tarHeader(file, prefix string) (*tar.Header, error) {
 	info, err := os.Lstat(file)
 	if err != nil {
 		return nil, err
@@ -132,7 +133,7 @@ func (cache *dirCache) tarHeader(file string) (*tar.Header, error) {
 	}
 	hdr, err := tar.FileInfoHeader(info, link)
 	if hdr != nil {
-		hdr.Name = file
+		hdr.Name = strings.TrimLeft(strings.TrimPrefix(file, prefix), "/")
 		// Zero out all timestamps.
 		hdr.ModTime = cache.mtime
 		hdr.AccessTime = cache.mtime
@@ -202,6 +203,7 @@ func (cache *dirCache) retrieveFiles2(target *core.BuildTarget, cacheDir string,
 	}
 	cache.markDir(cacheDir, 0)
 	if cache.Compress {
+		log.Debug("Retrieving %s: %s from compressed cache", target.Label, cacheDir)
 		return true, cache.retrieveCompressed(target, cacheDir)
 	} else {
 		for _, out := range outs {

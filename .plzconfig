@@ -56,8 +56,7 @@ defaultimage = thoughtmachine/please_test:v2
 allowlocalfallback = false
 
 [cache]
-; Too hard to make this guy work during initial bootstrap.
-dircachecleaner = none
+dircompress = true
 
 [licences]
 accept = MIT
