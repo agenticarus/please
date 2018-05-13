@@ -11,9 +11,9 @@ jobs:
        - checkout
        - restore_cache:
            keys:
-	     - bootstrap-linux-{{ checksum "bootstrap.sh" }}
-	     - go-linux-{{ checksum "third_party/go/BUILD" }}
-	     - python-linux-{{ checksum "third_party/python/BUILD" }}
+             - bootstrap-linux-{{ checksum "bootstrap.sh" }}
+             - go-linux-{{ checksum "third_party/go/BUILD" }}
+             - python-linux-{{ checksum "third_party/python/BUILD" }}
        - run:
            name: Bootstrap & Build
            command: ./bootstrap.sh --exclude no_circleci --test_results_file plz-out/results/test_results.xml
@@ -32,13 +32,13 @@ jobs:
            path: /tmp/artifacts
        - save_cache:
            key: bootstrap-linux-{{ checksum "bootstrap.sh" }}
-	   paths: [ ".bootstrap" ]
+           paths: [ ".bootstrap" ]
        - save_cache:
            key: go-linux-{{ checksum "third_party/go/BUILD" }}
-	   paths: [ ".plz-cache/third_party/go" ]
+           paths: [ ".plz-cache/third_party/go" ]
        - save_cache:
            key: python-linux-{{ checksum "third_party/python/BUILD" }}
-	   paths: [ ".plz-cache/third_party/python" ]
+           paths: [ ".plz-cache/third_party/python" ]
 
 
    build-linux-alt:
@@ -51,9 +51,9 @@ jobs:
        - checkout
        - restore_cache:
            keys:
-	     - bootstrap-linux-{{ checksum "bootstrap.sh" }}
-	     - go-linux-{{ checksum "third_party/go/BUILD" }}
-	     - python-linux-{{ checksum "third_party/python/BUILD" }}
+             - bootstrap-linux-{{ checksum "bootstrap.sh" }}
+             - go-linux-{{ checksum "third_party/go/BUILD" }}
+             - python-linux-{{ checksum "third_party/python/BUILD" }}
        - run:
            name: Bootstrap & Build
            command: ./bootstrap.sh --exclude no_circleci --test_results_file plz-out/results/test_results.xml
@@ -64,13 +64,13 @@ jobs:
            command: ./tools/misc/ci_lint.py
        - save_cache:
            key: bootstrap-linux-{{ checksum "bootstrap.sh" }}
-	   paths: [ ".bootstrap" ]
+           paths: [ ".bootstrap" ]
        - save_cache:
            key: go-linux-{{ checksum "third_party/go/BUILD" }}
-	   paths: [ ".plz-cache/third_party/go" ]
+           paths: [ ".plz-cache/third_party/go" ]
        - save_cache:
            key: python-linux-{{ checksum "third_party/python/BUILD" }}
-	   paths: [ ".plz-cache/third_party/python" ]
+           paths: [ ".plz-cache/third_party/python" ]
 
    build-darwin:
       macos:
@@ -81,9 +81,9 @@ jobs:
        - checkout
        - restore_cache:
            keys:
-	     - bootstrap-darwin-{{ checksum "bootstrap.sh" }}
-	     - go-darwin-{{ checksum "third_party/go/BUILD" }}
-	     - python-darwin-{{ checksum "third_party/python/BUILD" }}
+             - bootstrap-darwin-{{ checksum "bootstrap.sh" }}
+             - go-darwin-{{ checksum "third_party/go/BUILD" }}
+             - python-darwin-{{ checksum "third_party/python/BUILD" }}
        - run:
            name: Install deps
            command: brew install go unittest-cpp nasm pkg-config && brew upgrade python
@@ -102,13 +102,13 @@ jobs:
            path: /tmp/artifacts
        - save_cache:
            key: bootstrap-darwin-{{ checksum "bootstrap.sh" }}
-	   paths: [ ".bootstrap" ]
+           paths: [ ".bootstrap" ]
        - save_cache:
            key: go-darwin-{{ checksum "third_party/go/BUILD" }}
-	   paths: [ ".plz-cache/third_party/go" ]
+           paths: [ ".plz-cache/third_party/go" ]
        - save_cache:
            key: python-darwin-{{ checksum "third_party/python/BUILD" }}
-	   paths: [ ".plz-cache/third_party/python" ]
+           paths: [ ".plz-cache/third_party/python" ]
 
 workflows:
   version: 2
