@@ -205,17 +205,16 @@ func (cache *dirCache) retrieveFiles2(target *core.BuildTarget, cacheDir string,
 	if cache.Compress {
 		log.Debug("Retrieving %s: %s from compressed cache", target.Label, cacheDir)
 		return true, cache.retrieveCompressed(target, cacheDir)
-	} else {
-		for _, out := range outs {
-			realOut, err := cache.ensureRetrieveReady(target, out)
-			if err != nil {
-				return false, err
-			}
-			cachedOut := path.Join(cacheDir, out)
-			log.Debug("Retrieving %s: %s from dir cache...", target.Label, cachedOut)
-			if err := core.RecursiveCopyFile(cachedOut, realOut, fileMode(target), true, true); err != nil {
-				return false, err
-			}
+	}
+	for _, out := range outs {
+		realOut, err := cache.ensureRetrieveReady(target, out)
+		if err != nil {
+			return false, err
+		}
+		cachedOut := path.Join(cacheDir, out)
+		log.Debug("Retrieving %s: %s from dir cache...", target.Label, cachedOut)
+		if err := core.RecursiveCopyFile(cachedOut, realOut, fileMode(target), true, true); err != nil {
+			return false, err
 		}
 	}
 	return true, nil
