@@ -3,6 +3,8 @@
 package cache
 
 import (
+	"archive/tar"
+	"compress/gzip"
 	"encoding/base64"
 	"os"
 	"path"
@@ -19,14 +21,16 @@ import (
 )
 
 type dirCache struct {
-	Dir   string
-	added map[string]uint64
-	mutex sync.Mutex
+	Dir      string
+	Compress bool
+	Suffix   string
+	added    map[string]uint64
+	mutex    sync.Mutex
 }
 
 func (cache *dirCache) Store(target *core.BuildTarget, key []byte, files ...string) {
-	cacheDir := cache.getPath(target, key)
-	tmpDir := cacheDir + "=" // Temp dir which we'll move when it's ready.
+	cacheDir := cache.getPath(target, key, "")
+	tmpDir := cache.getPath(target, key, "=") // Temp dir which we'll move when it's ready.
 	cache.markDir(cacheDir, 0)
 	// Clear out anything that might already be there.
 	if err := os.RemoveAll(cacheDir); err != nil {
@@ -37,8 +41,12 @@ func (cache *dirCache) Store(target *core.BuildTarget, key []byte, files ...stri
 		return
 	}
 	var totalSize uint64
-	for out := range cacheArtifacts(target, files...) {
-		totalSize += cache.storeFile(target, out, tmpDir)
+	if cache.Compress {
+		totalSize = cache.storeCompressed(target, out, tmpDir, cacheArtifacts(target, files...))
+	} else {
+		for out := range cacheArtifacts(target, files...) {
+			totalSize += cache.storeFile(target, out, tmpDir)
+		}
 	}
 	cache.markDir(cacheDir, totalSize)
 	if err := os.Rename(tmpDir, cacheDir); err != nil {
@@ -47,29 +55,49 @@ func (cache *dirCache) Store(target *core.BuildTarget, key []byte, files ...stri
 }
 
 func (cache *dirCache) StoreExtra(target *core.BuildTarget, key []byte, out string) {
-	path := cache.getPath(target, key)
+	path := cache.getPath(target, key, "")
 	cache.markDir(path, 0)
 	size := cache.storeFile(target, out, path)
 	cache.markDir(path, size)
 }
 
+// storeCompressed stores all the given files in the cache as a single compressed tarball.
+func (cache *dirCache) storeCompressed(target *core.BuildTarget, filename string, files <-chan string) uint64 {
+	if !cache.ensureReady(filename) {
+		return 0
+	}
+	f, err := os.Create(filename)
+	if err != nil {
+		log.Warning("Failed to create cache file: %s", err)
+		return 0
+	}
+	defer f.Close()
+	gw := gzip.NewWriter(f)
+	defer gw.Cloze()
+
+}
+
+// ensureReady ensures that the directory containing the given filename exists and any previous fie has been removed.
+func (cache *dirCache) ensureReady(filename string) bool {
+	dir := path.Dir(filename)
+	if err := os.MkdirAll(dir, core.DirPermissions); err != nil {
+		log.Warning("Failed to create cache directory %s: %s", dir, err)
+		return false
+	} else if err := os.RemoveAll(filename); err != nil {
+		log.Warning("Failed to remove existing cached file %s: %s", filename, err)
+		return false
+	}
+	return true
+}
+
 func (cache *dirCache) storeFile(target *core.BuildTarget, out, cacheDir string) uint64 {
 	log.Debug("Storing %s: %s in dir cache...", target.Label, out)
-	if dir := path.Dir(out); dir != "." {
-		if err := os.MkdirAll(path.Join(cacheDir, dir), core.DirPermissions); err != nil {
-			log.Warning("Failed to create cache directory %s: %s", path.Join(cacheDir, dir), err)
-			return 0
-		}
-	}
 	outFile := path.Join(core.RepoRoot, target.OutDir(), out)
 	cachedFile := path.Join(cacheDir, out)
-	// Remove anything existing
-	if err := os.RemoveAll(cachedFile); err != nil {
-		log.Warning("Failed to remove existing cached file %s: %s", cachedFile, err)
-	} else if err := os.MkdirAll(cacheDir, core.DirPermissions); err != nil {
-		log.Warning("Failed to create cache directory %s: %s", cacheDir, err)
+	if !cache.ensureReady(cachedFile, out) {
 		return 0
-	} else if err := core.RecursiveCopyFile(outFile, cachedFile, fileMode(target), true, true); err != nil {
+	}
+	if err := core.RecursiveCopyFile(outFile, cachedFile, fileMode(target), true, true); err != nil {
 		// Cannot hardlink files into the cache, must copy them for reals.
 		log.Warning("Failed to store cache file %s: %s", cachedFile, err)
 	}
@@ -80,7 +108,7 @@ func (cache *dirCache) storeFile(target *core.BuildTarget, out, cacheDir string)
 }
 
 func (cache *dirCache) Retrieve(target *core.BuildTarget, key []byte) bool {
-	cacheDir := cache.getPath(target, key)
+	cacheDir := cache.getPath(target, key, "")
 	if !core.PathExists(cacheDir) {
 		log.Debug("%s: %s doesn't exist in dir cache", target.Label, cacheDir)
 		return false
@@ -96,7 +124,7 @@ func (cache *dirCache) Retrieve(target *core.BuildTarget, key []byte) bool {
 
 func (cache *dirCache) RetrieveExtra(target *core.BuildTarget, key []byte, out string) bool {
 	outDir := path.Join(core.RepoRoot, target.OutDir())
-	cacheDir := cache.getPath(target, key)
+	cacheDir := cache.getPath(target, key, "")
 	cachedOut := path.Join(cacheDir, out)
 	realOut := path.Join(outDir, out)
 	if !core.PathExists(cachedOut) {
@@ -141,9 +169,9 @@ func (cache *dirCache) CleanAll() {
 
 func (cache *dirCache) Shutdown() {}
 
-func (cache *dirCache) getPath(target *core.BuildTarget, key []byte) string {
-	// NB. Is very important to use a padded encoding here so lengths are consistent for cache_cleaner.
-	return path.Join(cache.Dir, target.Label.PackageName, target.Label.Name, base64.URLEncoding.EncodeToString(key))
+func (cache *dirCache) getPath(target *core.BuildTarget, key []byte, extra string) string {
+	// NB. Is very important to use a padded encoding here so lengths are consistent when cleaning.
+	return path.Join(cache.Dir, target.Label.PackageName, target.Label.Name, base64.URLEncoding.EncodeToString(key)) + extra + cache.Suffix
 }
 
 // markDir marks a directory as added to the cache, which saves it from later deletion.
@@ -164,12 +192,15 @@ func (cache *dirCache) isMarked(path string) (uint64, bool) {
 
 func newDirCache(config *core.Configuration) *dirCache {
 	cache := &dirCache{
-		added: map[string]uint64{},
+		Compress: config.Cache.DirCompress,
+		Dir:      config.Cache.Dir,
+		added:    map[string]uint64{},
+	}
+	if cache.Compress {
+		cache.Suffix = ".tar.gz"
 	}
 	// Absolute paths are allowed. Relative paths are interpreted relative to the repo root.
-	if config.Cache.Dir[0] == '/' {
-		cache.Dir = config.Cache.Dir
-	} else {
+	if config.Cache.Dir[0] != '/' {
 		cache.Dir = path.Join(core.RepoRoot, config.Cache.Dir)
 	}
 	// Make directory if it doesn't exist.
@@ -221,12 +252,7 @@ func (cache *dirCache) clean(highWaterMark, lowWaterMark uint64) uint64 {
 	var totalSize uint64
 	if err := fs.Walk(cache.Dir, func(path string, isDir bool) error {
 		name := filepath.Base(path)
-		if isDir && (len(name) == 28 || len(name) == 29) && name[27] == '=' {
-			// Directory has the right length. We do this in an attempt to clean only entire
-			// entries in the cache, not just individual files from them.
-			// 28 == length of 20-byte sha1 hash, encoded to base64, which always gets a trailing =
-			// as padding so we can check that to be "sure".
-			// Also 29 in case we appended an extra = (see below)
+		if cache.shouldClean(name, isDir) {
 			if size, marked := cache.isMarked(path); marked {
 				totalSize += size
 				return filepath.SkipDir // Already handled
@@ -286,4 +312,19 @@ func (cache *dirCache) clean(highWaterMark, lowWaterMark uint64) uint64 {
 		}
 	}
 	return totalSize
+}
+
+// shouldClean returns true if we should clean this file.
+// We track this in order to clean only entire entries in the cache, not just individual files from them.
+func (cache *dirCache) shouldClean(name string, isDir bool) bool {
+	if cache.Compress == isDir {
+		return false // If we're compressing, don't look for directories. If we're not, only look at directories.
+	} else if !strings.HasSuffix(name, cache.Suffix) {
+		return false // Suffix must match.
+	}
+	name = strings.TrimSuffix(name, cache.Suffix)
+	// 28 == length of 20-byte sha1 hash, encoded to base64, which always gets a trailing =
+	// as padding so we can check that to be "sure".
+	// Also 29 in case we appended an extra = (which we do for temporary files that are still being written to)
+	return (len(name) == 28 || len(name) == 29) && name[27] == '='
 }

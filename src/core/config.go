@@ -270,6 +270,7 @@ type Configuration struct {
 		DirCacheHighWaterMark cli.ByteSize `help:"Starts cleaning the directory cache when it is over this number of bytes.\nCan also be given with human-readable suffixes like 10G, 200MB etc."`
 		DirCacheLowWaterMark  cli.ByteSize `help:"When cleaning the directory cache, it's reduced to at most this size."`
 		DirClean              bool         `help:"Controls whether entries in the dir cache are cleaned or not. If disabled the cache will only grow."`
+		DirCompress           bool         `help:"Compresses stored artifacts in the dir cache. They are slower to store & retrieve but more compact."`
 		HTTPURL               cli.URL      `help:"Base URL of the HTTP cache.\nNot set to anything by default which means the cache will be disabled."`
 		HTTPWriteable         bool         `help:"If True this plz instance will write content back to the HTTP cache.\nBy default it runs in read-only mode."`
 		HTTPTimeout           cli.Duration `help:"Timeout for operations contacting the HTTP cache, in seconds."`
