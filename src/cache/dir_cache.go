@@ -101,7 +101,7 @@ func (cache *dirCache) storeCompressed2(target *core.BuildTarget, filename strin
 				return err
 			} else if err := tw.WriteHeader(hdr); err != nil {
 				return err
-			} else if !isDir {
+			} else if hdr.Typeflag != tar.TypeDir && hdr.Typeflag != tar.TypeSymlink {
 				f, err := os.Open(name)
 				if err != nil {
 					return err
@@ -263,8 +263,12 @@ func (cache *dirCache) retrieveCompressed(target *core.BuildTarget, filename str
 			if err != nil {
 				return err
 			}
-			defer f.Close()
-			if _, err := io.Copy(f, tr); err != nil {
+			_, err = io.Copy(f, tr)
+			// N.B. It is important not to defer this - since defers do not run until the function
+			//      exits, we can stack up many open files within this loop, and when retrieving multiple
+			//      large artifacts at once can easily run out of file handles.
+			f.Close()
+			if err != nil {
 				return err
 			}
 		}
