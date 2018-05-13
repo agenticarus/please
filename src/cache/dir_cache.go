@@ -47,7 +47,7 @@ func (cache *dirCache) storeFiles(target *core.BuildTarget, key []byte, suffix s
 	cache.markDir(cacheDir, 0)
 	var totalSize uint64
 	if cache.Compress {
-		totalSize = cache.storeCompressed(target, cacheDir, files)
+		totalSize = cache.storeCompressed(target, tmpDir, files)
 	} else {
 		for _, out := range files {
 			totalSize += cache.storeFile(target, out, tmpDir)
