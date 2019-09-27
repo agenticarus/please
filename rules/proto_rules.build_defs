@@ -141,6 +141,19 @@ def proto_library(name:str, srcs:list, deps:list=[], visibility:list=None, label
     )
 
 
+def proto_library_descriptor(name:str, srcs:list, deps:list=None, languages:list|dict=None):
+    """Builds a proto library with a descriptorset."""
+    return build_rule(
+        name = name,
+        srcs = srcs,
+        outs = [f"{name}-set.proto.bin"],
+        cmd = "$TOOLS_PROTOC --descriptor_set_out=${OUTS} --include_source_info ${SRCS}",
+        tools = {
+            'protoc': [CONFIG.PROTOC_TOOL],
+        },
+    )
+
+
 def grpc_library(name:str, srcs:list, deps:list=None, visibility:list=None, languages:list|dict=None,
                  labels:list&features&tags=[], test_only:bool&testonly=False, root_dir:str='', protoc_flags:list=None):
     """Defines a rule for a grpc library.

@@ -43,7 +43,7 @@ python_test(
 )
 
 proto_library(
-    name = "flag_test",
+    name = "flag_test_proto",
     srcs = [
         "flag_test.proto",
     ],
@@ -51,11 +51,20 @@ proto_library(
         "go",
         "py",
     ],
-    protoc_flags = [
-        "--descriptor_set_out=flag_test_descriptor.proto",
-        "--include_source_info",
+)
+
+
+proto_library_descriptor(
+    name = "flag_test_proto_descriptor",
+    srcs = [
+        "flag_test.proto",
+    ],
+    languages = [
+        "go",
+        "py",
     ],
 )
+
 
 python_test(
     name = "flag_out_test",
