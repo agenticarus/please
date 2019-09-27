@@ -1,0 +1,8 @@
+syntax = "proto3";
+
+package proto_rules;
+
+// This message is a sample message.
+message FlagTestMessage {
+    string id = 1; // id is the id of the message.
+}

@@ -86,8 +86,8 @@ def proto_library(name:str, srcs:list, deps:list=[], visibility:list=None, label
 
     # Plugins can declare their own pre-build functions. If there are any, we need to apply them all in sequence.
     pre_build_functions = [plugin['pre_build'] for plugin in plugins if plugin['pre_build']]
-    pre_build_functions += [_collect_transitive_labels]
     pre_build = lambda rule: [fn(rule) for fn in pre_build_functions]
+
     protoc_rule = build_rule(
         name = name,
         tag = 'protoc',
@@ -245,14 +245,6 @@ def _merge_dicts(a, b):
     if not isinstance(a, dict):
         return {x: b[x] for x in a}  # Languages can be passed as just a list.
     return {k: v or b[k] for k, v in a.items()}
-
-
-def _collect_transitive_labels(rule):
-    """Defines a pre-build function that updates a build command with transitive protoc flags."""
-    labels = get_labels(rule, 'protoc:')
-    if labels:
-        cmd = get_command(rule)
-        set_command(rule, cmd.replace('$TOOLS_PROTOC ', '$TOOLS_PROTOC %s ' % ' '.join(labels)))
 
 
 def proto_languages():

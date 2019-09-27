@@ -41,3 +41,26 @@ python_test(
         ":js_test_proto_filegroup",
     ],
 )
+
+proto_library(
+    name = "flag_test",
+    srcs = [
+        "flag_test.proto",
+    ],
+    languages = [
+        "go",
+        "py",
+    ],
+    protoc_flags = [
+        "--descriptor_set_out=flag_test_descriptor.proto",
+        "--include_source_info",
+    ],
+)
+
+python_test(
+    name = "flag_out_test",
+    srcs = ["flag_out_test.py"],
+    deps = [
+        ":flag_test",
+    ],
+)
